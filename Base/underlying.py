@@ -8,14 +8,16 @@ import datetime
 
 from Base.call import call
 from Base.put import put
+from Base.future import future
 
 class underlying:
     def __init__(self, underlying_ticker):
         self.underlying_ticker = underlying_ticker
         self.stock = None
         self.options = {}
-        self.futures = None
+        self.futures = {}
 
+    # Options
     def get_option_matrix(self):
         kite = KiteConnect(api_key=api_key)
         kite.set_access_token(access_token)
@@ -28,7 +30,6 @@ class underlying:
 
     def create_options_contracts(self):
         self.option_expiries = list(set(self.get_expiry_list(self.options_matrix)))
-        self.options = {}
         for expiry in self.option_expiries:
             self.options[expiry] = {}
             option_strikes = self.get_strike_list(self.options_matrix, expiry)
@@ -45,8 +46,27 @@ class underlying:
             for strike in option_strikes:
                 self.options[expiry][strike]["call"].get_data(start_date, end_date, interval)
                 self.options[expiry][strike]["put"].get_data(start_date, end_date, interval)
-        
 
+    #Futures
+    def get_futures_matrix(self):
+        kite = KiteConnect(api_key=api_key)
+        kite.set_access_token(access_token)
+
+        ticker_name = self.underlying_ticker
+        nso = kite.instruments('NFO')
+        nso_data = pd.DataFrame(nso)
+        self.futures_matrix = nso_data[(nso_data.name == ticker_name) & (nso_data.segment == 'NFO-FUT')].set_index(["expiry"])[["instrument_token"]] 
+
+    def create_futures_contracts(self):
+        self.futures_expiries = list(set(self.get_expiry_list(self.options_matrix)))
+        for expiry in self.futures_expiries:
+            self.futures[expiry] = future(self, expiry, self.futures_matrix.loc[expiry]["instrument_token"])
+
+    def get_data_for_all_futures_contracts(self, start_date, end_date, interval):
+        for expiry in self.futures_expiries:
+            self.futures[expiry].get_data(start_date, end_date, interval)
+
+    #Options
     @staticmethod
     def get_expiry_list(options_matrix):
         return list(options_matrix.index.get_level_values('expiry'))
@@ -63,3 +83,5 @@ class underlying:
         return options_matrix.iloc[(options_matrix.index.get_level_values('expiry') == expiry)&
                                    (options_matrix.index.get_level_values('strike') == strike)&
                                    (options_matrix.index.get_level_values('instrument_type') == instrument_type)]["instrument_token"].iloc[0]
+    
+    #Futures
